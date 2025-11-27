@@ -31,27 +31,15 @@
           </p>
         </div>
         
-        <!-- LLM提供商选择 -->
+        <!-- LLM提供商选择 - 仅DeepSeek -->
         <div v-if="config.enabled" class="setting-section">
-          <h3>选择AI服务商</h3>
-          <div class="provider-grid">
-            <label
-              v-for="provider in providers"
-              :key="provider.id"
-              class="provider-card"
-              :class="{ active: config.provider === provider.id }"
-            >
-              <input
-                v-model="config.provider"
-                type="radio"
-                :value="provider.id"
-                @change="handleProviderChange"
-              />
-              <div class="provider-info">
-                <span class="provider-name">{{ provider.name }}</span>
-                <span class="provider-model">{{ provider.model }}</span>
-              </div>
-            </label>
+          <h3>AI服务商</h3>
+          <div class="provider-info-display">
+            <div class="provider-badge">
+              <span class="provider-name">🤖 DeepSeek</span>
+              <span class="provider-model">deepseek-chat</span>
+            </div>
+            <p class="provider-desc">高性价比的国产大模型，支持中文，响应速度快</p>
           </div>
         </div>
         
@@ -74,7 +62,7 @@
           </div>
           <p class="setting-desc">
             💡 如何获取API Key？
-            <a :href="getApiKeyUrl" target="_blank" class="link">点击查看教程</a>
+            <a href="https://platform.deepseek.com/api_keys" target="_blank" class="link">前往 DeepSeek 官网获取</a>
           </p>
         </div>
         
@@ -135,8 +123,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { getLLMConfig, saveLLMConfig, getSupportedLLMs } from '../utils/llm.js'
+import { ref, onMounted } from 'vue'
+import { getLLMConfig, saveLLMConfig } from '../utils/llm.js'
 
 const emit = defineEmits(['close', 'saved'])
 
@@ -148,36 +136,9 @@ const config = ref({
 
 const showApiKey = ref(false)
 const saving = ref(false)
-const providers = ref([])
-
-// 获取API Key申请URL
-const getApiKeyUrl = computed(() => {
-  const urls = {
-    openai: 'https://platform.openai.com/api-keys',
-    claude: 'https://console.anthropic.com/account/keys',
-    qwen: 'https://dashscope.console.aliyun.com/apiKey',
-    moonshot: 'https://platform.moonshot.cn/console/api-keys',
-    deepseek: 'https://platform.deepseek.com/api_keys'
-  }
-  return urls[config.value.provider] || urls.openai
-})
 
 const handleToggle = () => {
   if (!config.value.enabled) {
-    config.value.apiKey = ''
-  }
-}
-
-const handleProviderChange = () => {
-  // 提供商改变时，清空API Key提示用户重新输入
-  if (config.value.apiKey) {
-    const confirmChange = confirm('切换服务商将清空当前API Key，确定继续吗？')
-    if (!confirmChange) {
-      // 恢复之前的provider
-      const saved = getLLMConfig()
-      config.value.provider = saved.provider
-      return
-    }
     config.value.apiKey = ''
   }
 }
@@ -215,9 +176,8 @@ onMounted(() => {
   // 加载配置
   const saved = getLLMConfig()
   config.value = { ...saved }
-  
-  // 加载支持的LLM列表
-  providers.value = getSupportedLLMs()
+  // 确保provider为deepseek
+  config.value.provider = 'deepseek'
 })
 </script>
 
@@ -403,53 +363,39 @@ input:checked + .slider:before {
   transform: translateX(24px);
 }
 
-/* 提供商选择 */
-.provider-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.provider-card {
+/* 提供商信息展示 */
+.provider-info-display {
   padding: 16px;
   background: var(--bg-dark);
-  border: 2px solid var(--border-color);
+  border: 2px solid var(--primary-color);
   border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
+}
+
+.provider-badge {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
-.provider-card input {
-  display: none;
-}
-
-.provider-card.active {
-  border-color: var(--primary-color);
-  background: rgba(0, 212, 255, 0.1);
-  box-shadow: 0 0 20px var(--glow-color);
-}
-
-.provider-card:hover {
-  border-color: var(--primary-color);
-}
-
-.provider-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.provider-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
 }
 
 .provider-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .provider-model {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 4px 8px;
+  border-radius: 4px;
 }
 
 /* API Key输入 */
@@ -563,10 +509,6 @@ input:checked + .slider:before {
 @media (max-width: 768px) {
   .modal-content {
     max-height: 95vh;
-  }
-  
-  .provider-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

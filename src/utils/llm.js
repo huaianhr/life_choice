@@ -32,7 +32,7 @@ export function getLLMConfig() {
     }
   }
   return {
-    provider: 'openai',
+    provider: 'deepseek',
     apiKey: '',
     enabled: false
   }
