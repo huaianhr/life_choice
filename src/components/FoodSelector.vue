@@ -341,6 +341,11 @@ onMounted(() => {
   z-index: 1;
 }
 
+/* 禁用滚动容器上的发光边框效果 */
+.modal-content.card::before {
+  display: none;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

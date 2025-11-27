@@ -9,30 +9,7 @@ import { getCurrentSeason } from './algorithm.js'
 
 // LLM配置
 const LLM_CONFIG = {
-  openai: {
-    name: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-3.5-turbo',
-    enabled: true
-  },
-  claude: {
-    name: 'Claude',
-    baseUrl: 'https://api.anthropic.com/v1',
-    model: 'claude-3-haiku-20240307',
-    enabled: true
-  },
-  qwen: {
-    name: '通义千问',
-    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
-    model: 'qwen-turbo',
-    enabled: true
-  },
-  moonshot: {
-    name: 'Moonshot',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k',
-    enabled: true
-  },
+
   deepseek: {
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
