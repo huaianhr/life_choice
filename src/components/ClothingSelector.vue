@@ -10,6 +10,33 @@
           约会穿什么
         </h2>
         <p class="modal-subtitle">根据今日天气和您的风格为您推荐</p>
+        
+        <!-- 模式选择和设置 -->
+        <div class="mode-selector">
+          <div class="mode-tabs">
+            <button
+              class="mode-tab"
+              :class="{ active: mode === 'fast' }"
+              @click="switchMode('fast')"
+            >
+              <span class="mode-icon">⚡</span>
+              <span class="mode-name">快速模式</span>
+            </button>
+            <button
+              class="mode-tab"
+              :class="{ active: mode === 'smart', disabled: !llmAvailable }"
+              @click="switchMode('smart')"
+              :disabled="!llmAvailable"
+            >
+              <span class="mode-icon">🤖</span>
+              <span class="mode-name">智能模式</span>
+              <span v-if="!llmAvailable" class="mode-badge">需配置</span>
+            </button>
+          </div>
+          <button class="settings-btn" @click="showSettings = true" title="设置">
+            ⚙️
+          </button>
+        </div>
       </div>
       
       <div class="modal-body">
@@ -102,10 +129,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { clothing, filterClothing, getSeasonByMonth } from '../data/clothing.js'
 import { smartSelect, smartSelectMultiple, getCurrentSeason } from '../utils/algorithm.js'
 import { getCurrentWeather } from '../utils/weather.js'
+import {
+  isLLMAvailable,
+  callLLM,
+  generateClothingPrompt,
+  getCachedRecommendation,
+  cacheRecommendation
+} from '../utils/llm.js'
+import Settings from './Settings.vue'
 
 const props = defineProps({
   userInfo: {
@@ -116,9 +151,13 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
+const mode = ref('fast')
 const selectedClothing = ref(null)
 const alternatives = ref([])
 const weather = ref(null)
+const loading = ref(false)
+const showSettings = ref(false)
+const llmAvailable = ref(false)
 
 const selectClothing = (item) => {
   selectedClothing.value = item

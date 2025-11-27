@@ -95,7 +95,7 @@
 
 感谢以下贡献者：
 
-- [@猛兔科技](https://github.com) - 项目创建者
+- [@Rain](https://github.com) - 项目创建者
 
 ---
 

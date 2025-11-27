@@ -10,6 +10,33 @@
           中午吃什么
         </h2>
         <p class="modal-subtitle">基于您的五行属性和当前季节为您推荐</p>
+        
+        <!-- 模式选择和设置 -->
+        <div class="mode-selector">
+          <div class="mode-tabs">
+            <button
+              class="mode-tab"
+              :class="{ active: mode === 'fast' }"
+              @click="switchMode('fast')"
+            >
+              <span class="mode-icon">⚡</span>
+              <span class="mode-name">快速模式</span>
+            </button>
+            <button
+              class="mode-tab"
+              :class="{ active: mode === 'smart', disabled: !llmAvailable }"
+              @click="switchMode('smart')"
+              :disabled="!llmAvailable"
+            >
+              <span class="mode-icon">🤖</span>
+              <span class="mode-name">智能模式</span>
+              <span v-if="!llmAvailable" class="mode-badge">需配置</span>
+            </button>
+          </div>
+          <button class="settings-btn" @click="showSettings = true" title="设置">
+            ⚙️
+          </button>
+        </div>
       </div>
       
       <div class="modal-body">
@@ -26,20 +53,43 @@
             <p class="result-description">{{ selectedFood.description }}</p>
             
             <div class="result-details">
-              <div class="detail-item">
-                <span class="detail-label">适合季节</span>
-                <span class="detail-value">{{ selectedFood.seasons.join('、') }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">五行属性</span>
-                <span class="detail-value">{{ selectedFood.elements.join('、') }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">匹配度</span>
-                <div class="match-bar">
-                  <div class="match-fill" :style="{ width: `${selectedFood.weight || 80}%` }"></div>
+              <!-- 快速模式显示 -->
+              <template v-if="mode === 'fast'">
+                <div class="detail-item">
+                  <span class="detail-label">适合季节</span>
+                  <span class="detail-value">{{ selectedFood.seasons?.join('、') }}</span>
                 </div>
-              </div>
+                <div class="detail-item">
+                  <span class="detail-label">五行属性</span>
+                  <span class="detail-value">{{ selectedFood.elements?.join('、') }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">匹配度</span>
+                  <div class="match-bar">
+                    <div class="match-fill" :style="{ width: `${selectedFood.weight || 80}%` }"></div>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- 智能模式显示 -->
+              <template v-else-if="mode === 'smart'">
+                <div v-if="selectedFood.reason" class="ai-reason">
+                  <h4>🎯 推荐理由</h4>
+                  <p>{{ selectedFood.reason }}</p>
+                </div>
+                <div v-if="selectedFood.nutrition" class="detail-item">
+                  <span class="detail-label">营养价值</span>
+                  <span class="detail-value">{{ selectedFood.nutrition }}</span>
+                </div>
+                <div v-if="selectedFood.price" class="detail-item">
+                  <span class="detail-label">价格区间</span>
+                  <span class="detail-value">{{ selectedFood.price }}</span>
+                </div>
+                <div v-if="selectedFood.restaurant" class="detail-item">
+                  <span class="detail-label">推荐地点</span>
+                  <span class="detail-value">{{ selectedFood.restaurant }}</span>
+                </div>
+              </template>
             </div>
           </div>
           
@@ -63,24 +113,41 @@
         <!-- 加载状态 -->
         <div v-else class="loading-container">
           <div class="loading-spinner"></div>
-          <p>正在为您精选美食...</p>
+          <p v-if="mode === 'smart'">AI正在为您生成个性化推荐...</p>
+          <p v-else>正在为您精选美食...</p>
         </div>
       </div>
       
       <div class="modal-footer">
-        <button class="btn btn-primary" @click="regenerate">
+        <button class="btn btn-primary" @click="regenerate" :disabled="loading">
           <span>🎲</span>
-          <span>重新选择</span>
+          <span v-if="loading">生成中...</span>
+          <span v-else>重新选择</span>
         </button>
       </div>
     </div>
+    
+    <!-- 设置弹窗 -->
+    <Settings
+      v-if="showSettings"
+      @close="showSettings = false"
+      @saved="handleSettingsSaved"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { foods, filterFoods, getCurrentSeason } from '../data/foods.js'
 import { smartSelect, smartSelectMultiple } from '../utils/algorithm.js'
+import {
+  isLLMAvailable,
+  callLLM,
+  generateFoodPrompt,
+  getCachedRecommendation,
+  cacheRecommendation
+} from '../utils/llm.js'
+import Settings from './Settings.vue'
 
 const props = defineProps({
   userInfo: {
@@ -91,22 +158,52 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
+const mode = ref('fast') // fast 或 smart
 const selectedFood = ref(null)
 const alternatives = ref([])
 const season = ref(getCurrentSeason())
+const loading = ref(false)
+const showSettings = ref(false)
+const llmAvailable = ref(false)
 
 const selectFood = (food) => {
   selectedFood.value = food
 }
 
-const regenerate = () => {
+const switchMode = async (newMode) => {
+  if (newMode === 'smart' && !llmAvailable.value) {
+    showSettings.value = true
+    return
+  }
+  
+  mode.value = newMode
+  await regenerate()
+}
+
+const regenerate = async () => {
   selectedFood.value = null
-  setTimeout(() => {
-    generateRecommendation()
+  alternatives.value = []
+  loading.value = true
+  
+  setTimeout(async () => {
+    try {
+      if (mode.value === 'smart') {
+        await generateSmartRecommendation()
+      } else {
+        generateFastRecommendation()
+      }
+    } catch (error) {
+      console.error('生成推荐失败:', error)
+      alert(`生成失败: ${error.message}\n\n将切换到快速模式`)
+      mode.value = 'fast'
+      generateFastRecommendation()
+    } finally {
+      loading.value = false
+    }
   }, 300)
 }
 
-const generateRecommendation = () => {
+const generateFastRecommendation = () => {
   // 获取当前季节
   const currentSeason = getCurrentSeason()
   
@@ -130,10 +227,81 @@ const generateRecommendation = () => {
   alternatives.value = smartSelectMultiple(remaining, props.userInfo, context, 3)
 }
 
+const generateSmartRecommendation = async () => {
+  const userId = props.userInfo.birthDate // 使用生日作为用户ID
+  
+  // 检查缓存
+  const cached = getCachedRecommendation('food', userId)
+  if (cached) {
+    selectedFood.value = cached
+    if (cached.alternatives) {
+      alternatives.value = cached.alternatives
+    }
+    return
+  }
+  
+  // 生成prompt
+  const currentSeason = getCurrentSeason()
+  const context = {
+    season: currentSeason,
+    temperature: null
+  }
+  
+  const prompt = generateFoodPrompt(props.userInfo, context)
+  
+  // 调用LLM
+  const result = await callLLM(prompt)
+  
+  // 处理返回结果
+  selectedFood.value = {
+    name: result.name,
+    category: result.category,
+    description: result.description,
+    reason: result.reason,
+    nutrition: result.nutrition,
+    temperature: result.temperature,
+    tags: result.tags || [],
+    price: result.price,
+    restaurant: result.restaurant
+  }
+  
+  // 处理备选方案
+  if (result.alternatives && Array.isArray(result.alternatives)) {
+    alternatives.value = result.alternatives.map((alt, index) => ({
+      id: `alt-${index}`,
+      name: alt.name,
+      category: result.category,
+      description: alt.reason || ''
+    }))
+  }
+  
+  // 缓存结果
+  cacheRecommendation('food', userId, {
+    ...selectedFood.value,
+    alternatives: alternatives.value
+  })
+}
+
+const handleSettingsSaved = () => {
+  // 重新检查LLM可用性
+  llmAvailable.value = isLLMAvailable()
+}
+
 onMounted(() => {
+  // 检查LLM可用性
+  llmAvailable.value = isLLMAvailable()
+  
   // 延迟一下，增加悬念感
   setTimeout(() => {
-    generateRecommendation()
+    if (mode.value === 'smart' && llmAvailable.value) {
+      generateSmartRecommendation().catch(error => {
+        console.error('智能推荐失败:', error)
+        mode.value = 'fast'
+        generateFastRecommendation()
+      })
+    } else {
+      generateFastRecommendation()
+    }
   }, 500)
 })
 </script>
@@ -237,6 +405,93 @@ onMounted(() => {
   font-size: 14px;
 }
 
+/* 模式选择器 */
+.mode-selector {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding: 12px;
+  background: var(--bg-hover);
+  border-radius: 12px;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--bg-dark);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+}
+
+.mode-tab:hover:not(:disabled) {
+  border-color: var(--primary-color);
+}
+
+.mode-tab.active {
+  border-color: var(--primary-color);
+  background: rgba(0, 212, 255, 0.1);
+  box-shadow: 0 0 15px var(--glow-color);
+}
+
+.mode-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mode-icon {
+  font-size: 18px;
+}
+
+.mode-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mode-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  padding: 2px 6px;
+  background: var(--accent-color);
+  border-radius: 10px;
+  font-size: 10px;
+  color: white;
+}
+
+.settings-btn {
+  width: 40px;
+  height: 40px;
+  background: var(--bg-dark);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.settings-btn:hover {
+  border-color: var(--primary-color);
+  background: rgba(0, 212, 255, 0.1);
+}
+
 .modal-body {
   min-height: 300px;
 }
@@ -318,6 +573,26 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
   text-align: left;
+}
+
+.ai-reason {
+  padding: 16px;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  border-left: 4px solid var(--primary-color);
+  margin-bottom: 12px;
+}
+
+.ai-reason h4 {
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: var(--primary-color);
+}
+
+.ai-reason p {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-secondary);
 }
 
 .detail-item {
