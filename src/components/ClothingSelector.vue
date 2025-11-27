@@ -77,20 +77,39 @@
             </div>
             
             <div class="result-details">
-              <div class="detail-item">
-                <span class="detail-label">适合场合</span>
-                <span class="detail-value">{{ selectedClothing.occasion.join('、') }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">星座匹配</span>
-                <span class="detail-value">{{ selectedClothing.zodiacMatch.join('、') }}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">匹配度</span>
-                <div class="match-bar">
-                  <div class="match-fill" :style="{ width: `${selectedClothing.weight || 85}%` }"></div>
+              <!-- 快速模式显示 -->
+              <template v-if="mode === 'fast'">
+                <div class="detail-item">
+                  <span class="detail-label">适合场合</span>
+                  <span class="detail-value">{{ selectedClothing.occasion?.join('、') }}</span>
                 </div>
-              </div>
+                <div class="detail-item">
+                  <span class="detail-label">星座匹配</span>
+                  <span class="detail-value">{{ selectedClothing.zodiacMatch?.join('、') }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">匹配度</span>
+                  <div class="match-bar">
+                    <div class="match-fill" :style="{ width: `${selectedClothing.weight || 85}%` }"></div>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- 智能模式显示 -->
+              <template v-else-if="mode === 'smart'">
+                <div v-if="selectedClothing.reason" class="ai-reason">
+                  <h4>🎯 推荐理由</h4>
+                  <p>{{ selectedClothing.reason }}</p>
+                </div>
+                <div v-if="selectedClothing.occasion" class="detail-item">
+                  <span class="detail-label">适合场合</span>
+                  <span class="detail-value">{{ Array.isArray(selectedClothing.occasion) ? selectedClothing.occasion.join('、') : selectedClothing.occasion }}</span>
+                </div>
+                <div v-if="selectedClothing.zodiacMatch" class="detail-item">
+                  <span class="detail-label">星座匹配</span>
+                  <span class="detail-value">{{ Array.isArray(selectedClothing.zodiacMatch) ? selectedClothing.zodiacMatch.join('、') : selectedClothing.zodiacMatch }}</span>
+                </div>
+              </template>
             </div>
           </div>
           
@@ -114,7 +133,8 @@
         <!-- 加载状态 -->
         <div v-else class="loading-container">
           <div class="loading-spinner"></div>
-          <p>正在为您搭配服装...</p>
+          <p v-if="mode === 'smart'">AI正在为您生成个性化搭配...</p>
+          <p v-else>正在为您搭配服装...</p>
         </div>
       </div>
       
@@ -125,6 +145,13 @@
         </button>
       </div>
     </div>
+    
+    <!-- 设置弹窗 -->
+    <Settings
+      v-if="showSettings"
+      @close="showSettings = false"
+      @saved="handleSettingsSaved"
+    />
   </div>
 </template>
 
@@ -163,10 +190,36 @@ const selectClothing = (item) => {
   selectedClothing.value = item
 }
 
-const regenerate = () => {
+const switchMode = async (newMode) => {
+  if (newMode === 'smart' && !llmAvailable.value) {
+    showSettings.value = true
+    return
+  }
+  
+  mode.value = newMode
+  await regenerate()
+}
+
+const regenerate = async () => {
   selectedClothing.value = null
-  setTimeout(() => {
-    generateRecommendation()
+  alternatives.value = []
+  loading.value = true
+  
+  setTimeout(async () => {
+    try {
+      if (mode.value === 'smart') {
+        await generateSmartRecommendation()
+      } else {
+        generateFastRecommendation()
+      }
+    } catch (error) {
+      console.error('生成推荐失败:', error)
+      alert(`生成失败: ${error.message}\n\n将切换到快速模式`)
+      mode.value = 'fast'
+      generateFastRecommendation()
+    } finally {
+      loading.value = false
+    }
   }, 300)
 }
 
@@ -185,7 +238,7 @@ const getWeatherIcon = (text) => {
   return iconMap[text] || '🌤️'
 }
 
-const generateRecommendation = async () => {
+const generateFastRecommendation = () => {
   // 获取当前季节
   const currentSeason = getCurrentSeason()
   const month = new Date().getMonth() + 1
@@ -208,7 +261,7 @@ const generateRecommendation = async () => {
     })
   }
   
-  // 如果筛选结果太少，放宽条件
+  // 如果筛选结果太少,放宽条件
   if (candidateClothing.length < 5) {
     candidateClothing = clothing.filter(c => 
       c.gender === props.userInfo.gender || c.gender === 'unisex'
@@ -230,7 +283,71 @@ const generateRecommendation = async () => {
   alternatives.value = smartSelectMultiple(remaining, props.userInfo, context, 3)
 }
 
+const generateSmartRecommendation = async () => {
+  const userId = props.userInfo.birthDate // 使用生日作为用户ID
+  
+  // 检查缓存
+  const cached = getCachedRecommendation('clothing', userId)
+  if (cached) {
+    selectedClothing.value = cached
+    if (cached.alternatives) {
+      alternatives.value = cached.alternatives
+    }
+    return
+  }
+  
+  // 生成prompt
+  const currentSeason = getCurrentSeason()
+  const context = {
+    season: currentSeason,
+    temperature: weather.value?.temperature
+  }
+  
+  const prompt = generateClothingPrompt(props.userInfo, context)
+  
+  // 调用LLM
+  const result = await callLLM(prompt)
+  
+  // 处理返回结果
+  selectedClothing.value = {
+    style: result.style,
+    description: result.description,
+    reason: result.reason,
+    items: result.items || [],
+    occasion: result.occasion || [],
+    zodiacMatch: result.zodiacMatch || [],
+    season: result.season,
+    gender: props.userInfo.gender,
+    tempRange: result.tempRange || [15, 25],
+    weight: result.weight || 85
+  }
+  
+  // 处理备选方案
+  if (result.alternatives && Array.isArray(result.alternatives)) {
+    alternatives.value = result.alternatives.map((alt, index) => ({
+      id: `alt-${index}`,
+      style: alt.style,
+      description: alt.reason || '',
+      tempRange: alt.tempRange || [15, 25]
+    }))
+  }
+  
+  // 缓存结果
+  cacheRecommendation('clothing', userId, {
+    ...selectedClothing.value,
+    alternatives: alternatives.value
+  })
+}
+
+const handleSettingsSaved = () => {
+  // 设置保存后，更新LLM可用状态
+  llmAvailable.value = isLLMAvailable()
+}
+
 onMounted(async () => {
+  // 检查LLM是否可用
+  llmAvailable.value = isLLMAvailable()
+  
   // 获取天气信息
   try {
     weather.value = await getCurrentWeather()
@@ -239,8 +356,21 @@ onMounted(async () => {
   }
   
   // 延迟一下，增加悬念感
-  setTimeout(() => {
-    generateRecommendation()
+  setTimeout(async () => {
+    loading.value = true
+    try {
+      if (mode.value === 'smart' && llmAvailable.value) {
+        await generateSmartRecommendation()
+      } else {
+        generateFastRecommendation()
+      }
+    } catch (error) {
+      console.error('生成推荐失败:', error)
+      mode.value = 'fast'
+      generateFastRecommendation()
+    } finally {
+      loading.value = false
+    }
   }, 500)
 })
 </script>
@@ -347,6 +477,93 @@ onMounted(async () => {
 .modal-subtitle {
   color: var(--text-secondary);
   font-size: 14px;
+}
+
+/* 模式选择器样式 */
+.mode-selector {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding: 12px;
+  background: var(--bg-hover);
+  border-radius: 12px;
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+
+.mode-tab {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--bg-dark);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  position: relative;
+}
+
+.mode-tab:hover:not(:disabled) {
+  border-color: var(--primary-color);
+}
+
+.mode-tab.active {
+  border-color: var(--primary-color);
+  background: rgba(0, 212, 255, 0.1);
+  box-shadow: 0 0 15px var(--glow-color);
+}
+
+.mode-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mode-icon {
+  font-size: 18px;
+}
+
+.mode-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mode-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  padding: 2px 6px;
+  background: var(--accent-color);
+  border-radius: 10px;
+  font-size: 10px;
+  color: white;
+}
+
+.settings-btn {
+  width: 40px;
+  height: 40px;
+  background: var(--bg-dark);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.settings-btn:hover {
+  border-color: var(--primary-color);
+  background: rgba(0, 212, 255, 0.1);
 }
 
 .modal-body {
@@ -516,6 +733,27 @@ onMounted(async () => {
 
 .item-name {
   font-size: 14px;
+}
+
+/* AI推荐理由样式 */
+.ai-reason {
+  padding: 16px;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  border-left: 4px solid var(--primary-color);
+  margin-bottom: 12px;
+}
+
+.ai-reason h4 {
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: var(--primary-color);
+}
+
+.ai-reason p {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-secondary);
 }
 
 .result-details {
