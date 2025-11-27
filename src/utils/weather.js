@@ -1,0 +1,155 @@
+/**
+ * 天气API工具
+ * 使用和风天气API获取实时天气信息
+ */
+
+// 和风天气API配置
+// 注意：实际使用时需要在 https://dev.qweather.com/ 注册并获取API Key
+const WEATHER_CONFIG = {
+  // 开发环境使用免费订阅，限制较多
+  apiKey: '', // 需要用户自行申请
+  baseUrl: 'https://devapi.qweather.com/v7',
+  // 上海的城市ID
+  cityId: '101020100'
+}
+
+/**
+ * 获取实时天气
+ * @param {String} cityId - 城市ID（默认上海）
+ * @returns {Promise<Object>} 天气信息
+ */
+export async function getCurrentWeather(cityId = WEATHER_CONFIG.cityId) {
+  // 如果没有配置API Key，返回模拟数据
+  if (!WEATHER_CONFIG.apiKey) {
+    return getSimulatedWeather()
+  }
+  
+  try {
+    const url = `${WEATHER_CONFIG.baseUrl}/weather/now?location=${cityId}&key=${WEATHER_CONFIG.apiKey}`
+    const response = await fetch(url)
+    const data = await response.json()
+    
+    if (data.code === '200') {
+      return {
+        temperature: parseInt(data.now.temp),
+        feelsLike: parseInt(data.now.feelsLike),
+        text: data.now.text,
+        windDir: data.now.windDir,
+        humidity: data.now.humidity,
+        updateTime: data.now.obsTime
+      }
+    } else {
+      console.error('获取天气失败:', data)
+      return getSimulatedWeather()
+    }
+  } catch (error) {
+    console.error('天气API请求失败:', error)
+    return getSimulatedWeather()
+  }
+}
+
+/**
+ * 获取模拟天气数据（用于开发和演示）
+ * @returns {Object} 模拟的天气信息
+ */
+export function getSimulatedWeather() {
+  const now = new Date()
+  const month = now.getMonth() + 1
+  
+  // 根据月份模拟合理的温度
+  let temperature = 20
+  let text = '晴'
+  
+  if (month >= 12 || month <= 2) {
+    // 冬季 0-10度
+    temperature = Math.floor(Math.random() * 11)
+    text = ['晴', '多云', '阴', '小雨'][Math.floor(Math.random() * 4)]
+  } else if (month >= 3 && month <= 5) {
+    // 春季 10-25度
+    temperature = Math.floor(Math.random() * 16) + 10
+    text = ['晴', '多云', '小雨'][Math.floor(Math.random() * 3)]
+  } else if (month >= 6 && month <= 8) {
+    // 夏季 25-38度
+    temperature = Math.floor(Math.random() * 14) + 25
+    text = ['晴', '多云', '雷阵雨', '阵雨'][Math.floor(Math.random() * 4)]
+  } else {
+    // 秋季 15-28度
+    temperature = Math.floor(Math.random() * 14) + 15
+    text = ['晴', '多云', '阴'][Math.floor(Math.random() * 3)]
+  }
+  
+  return {
+    temperature,
+    feelsLike: temperature + Math.floor(Math.random() * 5) - 2,
+    text,
+    windDir: ['东风', '南风', '西风', '北风', '东南风', '西南风'][Math.floor(Math.random() * 6)],
+    humidity: Math.floor(Math.random() * 40) + 40,
+    updateTime: now.toISOString(),
+    isSimulated: true // 标记为模拟数据
+  }
+}
+
+/**
+ * 设置天气API Key
+ * @param {String} apiKey - API密钥
+ */
+export function setWeatherApiKey(apiKey) {
+  WEATHER_CONFIG.apiKey = apiKey
+  // 保存到localStorage
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('weatherApiKey', apiKey)
+  }
+}
+
+/**
+ * 从localStorage加载API Key
+ */
+export function loadWeatherApiKey() {
+  if (typeof localStorage !== 'undefined') {
+    const apiKey = localStorage.getItem('weatherApiKey')
+    if (apiKey) {
+      WEATHER_CONFIG.apiKey = apiKey
+    }
+  }
+}
+
+/**
+ * 根据温度给出穿衣建议
+ * @param {Number} temperature - 温度
+ * @returns {String} 穿衣建议
+ */
+export function getClothingAdvice(temperature) {
+  if (temperature < 0) {
+    return '严寒，需要穿厚羽绒服、棉衣等保暖衣物'
+  } else if (temperature < 10) {
+    return '寒冷，建议穿大衣、羽绒服、毛衣等'
+  } else if (temperature < 15) {
+    return '较冷，建议穿外套、风衣、针织衫等'
+  } else if (temperature < 20) {
+    return '凉爽，建议穿薄外套、长袖衬衫等'
+  } else if (temperature < 25) {
+    return '舒适，建议穿长袖或短袖T恤'
+  } else if (temperature < 30) {
+    return '温暖，建议穿短袖、薄裤等轻便衣物'
+  } else if (temperature < 35) {
+    return '炎热，建议穿短袖、短裤等清凉衣物'
+  } else {
+    return '酷热，建议穿透气性好的短袖短裤，注意防暑'
+  }
+}
+
+/**
+ * 获取温度等级
+ * @param {Number} temperature - 温度
+ * @returns {String} 温度等级
+ */
+export function getTemperatureLevel(temperature) {
+  if (temperature < 10) return 'cold'
+  if (temperature < 20) return 'cool'
+  if (temperature < 28) return 'warm'
+  return 'hot'
+}
+
+// 页面加载时尝试加载保存的API Key
+loadWeatherApiKey()
+
