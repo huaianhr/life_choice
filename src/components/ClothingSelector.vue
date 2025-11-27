@@ -58,7 +58,7 @@
             <div class="result-tags">
               <span class="tag">{{ selectedClothing.season }}季</span>
               <span class="tag">{{ selectedClothing.gender === 'male' ? '男士' : selectedClothing.gender === 'female' ? '女士' : '通用' }}</span>
-              <span class="tag">{{ selectedClothing.tempRange[0] }}-{{ selectedClothing.tempRange[1] }}°C</span>
+              <span v-if="selectedClothing.tempRange" class="tag">{{ selectedClothing.tempRange[0] }}-{{ selectedClothing.tempRange[1] }}°C</span>
             </div>
             <p class="result-description">{{ selectedClothing.description }}</p>
             
@@ -124,7 +124,7 @@
                 @click="selectClothing(clothing)"
               >
                 <span class="alternative-name">{{ clothing.style }}</span>
-                <span class="alternative-temp">{{ clothing.tempRange[0] }}-{{ clothing.tempRange[1] }}°C</span>
+                <span v-if="clothing.tempRange" class="alternative-temp">{{ clothing.tempRange[0] }}-{{ clothing.tempRange[1] }}°C</span>
               </div>
             </div>
           </div>
@@ -297,13 +297,10 @@ const generateSmartRecommendation = async () => {
   }
   
   // 生成prompt
-  const currentSeason = getCurrentSeason()
-  const context = {
-    season: currentSeason,
-    temperature: weather.value?.temperature
-  }
-  
-  const prompt = generateClothingPrompt(props.userInfo, context)
+  const prompt = generateClothingPrompt(props.userInfo, weather.value || {
+    temperature: 20,
+    text: '晴'
+  })
   
   // 调用LLM
   const result = await callLLM(prompt)

@@ -288,26 +288,46 @@ export async function callLLM(prompt) {
     throw new Error('请先配置API Key')
   }
   
+  console.log('=== LLM调用开始 ===')
+  console.log('提供商:', config.provider)
+  console.log('输入Prompt:', prompt)
+  console.log('==================')
+  
   let responseText
   
   try {
-    // 根据不同的provider调用对应的API
-    switch (config.provider) {
-      case 'openai':
-      case 'moonshot':
-      case 'deepseek':
-        responseText = await callOpenAI(prompt, config)
-        break
-      case 'claude':
-        responseText = await callClaude(prompt, config)
-        break
-      case 'qwen':
-        responseText = await callQwen(prompt, config)
-        break
-      default:
-        // 默认使用OpenAI兼容接口
-        responseText = await callOpenAI(prompt, config)
-    }
+    // 创建超时Promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        console.error('❌ LLM调用超时 (60秒)')
+        reject(new Error('LLM调用超时，请检查网络连接或API配置'))
+      }, 60000)
+    })
+    
+    // 创建API调用Promise
+    const apiPromise = (async () => {
+      // 根据不同的provider调用对应的API
+      switch (config.provider) {
+        case 'openai':
+        case 'moonshot':
+        case 'deepseek':
+          return await callOpenAI(prompt, config)
+        case 'claude':
+          return await callClaude(prompt, config)
+        case 'qwen':
+          return await callQwen(prompt, config)
+        default:
+          // 默认使用OpenAI兼容接口
+          return await callOpenAI(prompt, config)
+      }
+    })()
+    
+    // 竞速执行，任一完成就返回
+    responseText = await Promise.race([apiPromise, timeoutPromise])
+    
+    console.log('=== LLM响应成功 ===')
+    console.log('原始响应:', responseText)
+    console.log('==================')
     
     // 解析JSON响应
     // 尝试提取JSON（可能包裹在```json```中）
@@ -328,10 +348,17 @@ export async function callLLM(prompt) {
     
     // 解析JSON
     const result = JSON.parse(jsonText)
+    
+    console.log('=== 解析结果 ===')
+    console.log('解析后的JSON:', result)
+    console.log('===============')
+    
     return result
     
   } catch (error) {
-    console.error('LLM调用失败:', error)
+    console.error('❌ LLM调用失败:', error)
+    console.error('错误详情:', error.message)
+    console.error('错误堆栈:', error.stack)
     throw new Error(`AI推荐失败: ${error.message}`)
   }
 }
