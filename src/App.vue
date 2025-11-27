@@ -9,7 +9,7 @@
         <span class="title-icon">🎯</span>
         人生选择器
       </h1>
-      <p class="app-subtitle">让命运为你做选择</p>
+      <p class="app-subtitle">让命运为你做选择,选一个吧</p>
     </header>
 
     <!-- 主内容 -->
