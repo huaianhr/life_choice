@@ -56,7 +56,7 @@
             <div class="result-icon">✨</div>
             <h3 class="result-title">{{ selectedClothing.style }}</h3>
             <div class="result-tags">
-              <span class="tag">{{ selectedClothing.season }}季</span>
+              <span v-if="selectedClothing.season" class="tag">{{ selectedClothing.season }}季</span>
               <span class="tag">{{ selectedClothing.gender === 'male' ? '男士' : selectedClothing.gender === 'female' ? '女士' : '通用' }}</span>
               <span v-if="selectedClothing.tempRange" class="tag">{{ selectedClothing.tempRange[0] }}-{{ selectedClothing.tempRange[1] }}°C</span>
             </div>
@@ -306,6 +306,18 @@ const generateSmartRecommendation = async () => {
   const result = await callLLM(prompt)
   
   // 处理返回结果
+  // 处理season字段：提取单字或使用当前季节
+  let season = result.season
+  if (!season || season.length === 0) {
+    season = getCurrentSeason()
+  } else if (season.includes('季')) {
+    // 如果LLM返回"春季"，提取"春"
+    season = season.replace('季', '')
+  } else if (season.length > 1) {
+    // 如果返回多字，取第一个字
+    season = season.charAt(0)
+  }
+  
   selectedClothing.value = {
     style: result.style,
     description: result.description,
@@ -313,7 +325,7 @@ const generateSmartRecommendation = async () => {
     items: result.items || [],
     occasion: result.occasion || [],
     zodiacMatch: result.zodiacMatch || [],
-    season: result.season,
+    season: season,
     gender: props.userInfo.gender,
     tempRange: result.tempRange || [15, 25],
     weight: result.weight || 85
